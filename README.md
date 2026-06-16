@@ -70,3 +70,10 @@ The model strictly adheres to the project guidelines set by the institution:
 
 ---
 
+## 📬 Contact Me
+
+<div align="center"> 
+  <a href="https://www.linkedin.com/" target="_blank"><img src="https://img.shields.io/badge/-LinkedIn-%230077B5?style=for-the-badge&logo=linkedin&logoColor=white"></a>
+  <a href="https://github.com/" target="_blank"><img src="https://img.shields.io/badge/-Github-181717?style=for-the-badge&logo=github&logoColor=white"></a>
+  <a href="mailto:your-email@example.com"><img src="https://img.shields.io/badge/-Gmail-%23333?style=for-the-badge&logo=gmail&logoColor=white"></a>
+</div>
