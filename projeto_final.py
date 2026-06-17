@@ -1,6 +1,4 @@
-# Análise de Treliça - 13 Nós (A a M)
-# Resolve o sistema sobre-determinado via mínima norma (lstsq)
-# Resultados formatados rigorosamente em frações para relatórios de engenharia.
+# Motor de Cálculo de Treliça: Resolução estática de 13 nós com output fracionário.
 
 import math
 import numpy as np
@@ -19,13 +17,13 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from fractions import Fraction
 import datetime
 
-# Constantes trigonométricas (ângulos de 60°) e tolerância para membros nulos
+# Geometria e precisão: Ângulos de 60° (equiláteros) e limite de truncamento.
 C60 = math.cos(math.radians(60))
 S60 = math.sin(math.radians(60))
 TOLERANCIA_ZERO = 1e-6
 
 def format_fraction(value: float, tol: float = TOLERANCIA_ZERO) -> str:
-    """Converte o valor float para uma string de fração formatada."""
+    """Simplifica resultados numéricos para frações de engenharia legíveis."""
     if abs(value) < tol:
         return "0"
     
@@ -37,7 +35,7 @@ def format_fraction(value: float, tol: float = TOLERANCIA_ZERO) -> str:
     return f"{sign}{frac.numerator}/{frac.denominator}"
 
 def get_force_names():
-    """Lista as 23 forças incógnitas (membros) da nova estrutura."""
+    """Mapeamento das 23 incógnitas axiais da estrutura."""
     return [
         "FAB", "FAC", "FBC", "FBD", "FCD", "FCE", "FDE", "FDF",
         "FEF", "FEG", "FFG", "FFH", "FGH", "FGI", "FHI", "FHJ",
@@ -45,7 +43,7 @@ def get_force_names():
     ]
 
 def get_node_equations_text():
-    """Retorna as equações literais de cada nó baseadas no novo PDF."""
+    """Definições literais das equações de equilíbrio para exibição no relatório/UI."""
     return {
         "A": [
             "FAC + FAB·cos(60°) = 0",
@@ -102,84 +100,71 @@ def get_node_equations_text():
     }
 
 def build_system():
-    """Gera a matriz de coeficientes A e o vetor de cargas B (Ax = B)."""
+    """Monta a matriz de rigidez estática A e o vetor de forças externas B (Ax = B)."""
     names = get_force_names()
     idx   = {name: i for i, name in enumerate(names)}
-    n_eq  = 26   # 13 nós * 2 direções
+    n_eq  = 26   # 13 nós x 2 direções (x, y)
     n_unk = len(names)
 
     A = np.zeros((n_eq, n_unk))
     B = np.zeros(n_eq)
     row = 0
 
-    def eq(coeffs: dict, b: float = 0.0):
+    def eq(coeffs: dict, b: float = 0.0):  # Helper para popular as linhas da matriz
         nonlocal row
         for name, coef in coeffs.items():
             A[row, idx[name]] += coef
         B[row] = b
         row += 1
 
-    # Nó A
     eq({"FAC": 1.0, "FAB": C60})
     eq({"FAB": S60}, b=-5.0)
 
-    # Nó B
     eq({"FAB": -C60, "FBC": C60, "FBD": 1.0})
     eq({"FAB": -S60, "FBC": -S60})
 
-    # Nó C
     eq({"FAC": -1.0, "FCE": 1.0, "FBC": -C60, "FCD": C60})
     eq({"FBC": S60, "FCD": S60})
 
-    # Nó D
     eq({"FBD": -1.0, "FCD": -C60, "FDE": C60, "FDF": 1.0})
     eq({"FCD": -S60, "FDE": -S60})
 
-    # Nó E
     eq({"FCE": -1.0, "FDE": -C60, "FEF": C60, "FEG": 1.0})
     eq({"FDE": S60, "FEF": S60})
 
-    # Nó F
     eq({"FDF": -1.0, "FEF": -C60, "FFG": C60, "FFH": 1.0})
     eq({"FEF": -S60, "FFG": -S60})
 
-    # Nó G
     eq({"FEG": -1.0, "FFG": -C60, "FGH": C60, "FGI": 1.0})
     eq({"FFG": S60, "FGH": S60}, b=10.0)
 
-    # Nó H
     eq({"FFH": -1.0, "FGH": -C60, "FHI": C60, "FHJ": 1.0})
     eq({"FGH": -S60, "FHI": -S60})
 
-    # Nó I
     eq({"FGI": -1.0, "FHI": -C60, "FIJ": C60, "FIK": 1.0})
     eq({"FHI": S60, "FIJ": S60})
 
-    # Nó J
     eq({"FHJ": -1.0, "FIJ": -C60, "FJK": C60, "FJL": 1.0})
     eq({"FIJ": -S60, "FJK": -S60})
 
-    # Nó K
     eq({"FIK": -1.0, "FJK": -C60, "FKL": C60, "FKM": 1.0})
     eq({"FJK": S60, "FKL": S60})
 
-    # Nó L
     eq({"FJL": -1.0, "FKL": -C60, "FLM": C60})
     eq({"FKL": -S60, "FLM": -S60})
 
-    # Nó M
     eq({"FKM": -1.0, "FLM": -C60})
     eq({"FLM": S60}, b=-5.0)
 
     return A, B, names
 
 def solve_truss():
-    """Resolve o sistema sobre-determinado usando mínimos quadrados (SVD)."""
+    """Resolve via Mínimos Quadrados (SVD) para gerenciar hiperestaticidade/estabilidade."""
     A, B, names = build_system()
 
     x, residuals, rank, sv = np.linalg.lstsq(A, B, rcond=None)
 
-    max_res = float(np.max(np.abs(A @ x - B)))
+    max_res = float(np.max(np.abs(A @ x - B))) # Check de consistência física
     if max_res > 1e-8:
         raise ValueError(
             f"Resíduo numérico elevado: {max_res:.2e}. "
@@ -212,6 +197,7 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
         subject="Método dos Nós — 13 Nós",
     )
 
+    # Identidade visual do relatório
     NAVY   = colors.HexColor("#1a2a4a")
     BLUE   = colors.HexColor("#2c5282")
     BG1    = colors.HexColor("#f0f4fa")
@@ -264,7 +250,7 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
     story.append(Spacer(1, 0.3*cm))
 
     story.append(Paragraph("2. Equações de Equilíbrio Nodal", s_sec))
-    eq_texts = get_node_equations_text()
+    eq_texts = get_node_equations_text() # Renderização das equações de equilíbrio
     for node in list("ABCDEFGHIJKLM"):
         eqs = eq_texts.get(node, [])
         block = [Paragraph(f"Nó {node}:", s_node)]
@@ -323,7 +309,7 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
     max_nm     = max(results, key=lambda k: abs(results[k]))
     max_vl     = results[max_nm]
 
-    sum_data = [
+    sum_data = [ # Tabela de resumo executivo
         [Paragraph("<b>Parâmetro</b>",    styles["Normal"]), Paragraph("<b>Valor</b>",        styles["Normal"])],
         ["Total de membros analisados",   str(len(results))],
         ["Membros em Tração (+)",         str(n_tr)],
@@ -353,6 +339,7 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
 
 
 class TrussApp(ctk.CTk):
+    # Paleta de cores da interface (Dark Theme)
     C_BG      = "#1a2a4a"
     C_PANEL   = "#1e3155"
     C_ACCENT  = "#4a90d9"
@@ -410,7 +397,7 @@ class TrussApp(ctk.CTk):
             font=ctk.CTkFont(size=13, weight="bold"), text_color=self.C_ACCENT,
         ).grid(row=0, column=0, padx=12, pady=(10, 5), sticky="w")
 
-        self.eq_textbox = ctk.CTkTextbox(
+        self.eq_textbox = ctk.CTkTextbox( # Área de visualização das equações literais
             frame, font=ctk.CTkFont(family="Courier", size=10),
             fg_color="#0d1b2e", text_color="#a8c8e8", corner_radius=6, wrap="none",
         )
@@ -453,7 +440,7 @@ class TrussApp(ctk.CTk):
         )
         self.btn_calc.grid(row=0, column=1, padx=(10, 0))
 
-        tree_frame = ctk.CTkFrame(frame, fg_color="#0d1b2e", corner_radius=6)
+        tree_frame = ctk.CTkFrame(frame, fg_color="#0d1b2e", corner_radius=6) # Frame da tabela
         tree_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 4))
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
@@ -491,14 +478,13 @@ class TrussApp(ctk.CTk):
         ctk.CTkLabel(ftr, text="Treliça 13 Nós  |  Resultados em Fração  |  Python 3", font=ctk.CTkFont(size=9), text_color="#5a7a9a").pack(side="left", padx=12, pady=4)
 
     def _on_calculate(self):
+        """Fluxo de execução: Cálculo -> UI -> Exportação PDF."""
         self.btn_calc.configure(state="disabled", text="⏳  Calculando...")
         self.status_label.configure(text="Resolvendo o sistema de equações...", text_color="#8ab4d4")
         self.update()
 
         try:
             results, info = solve_truss()
-            self._populate_results(results)
-
             pdf_path = ctk.filedialog.asksaveasfilename(
                 defaultextension=".pdf",
                 filetypes=[("Arquivos PDF", "*.pdf")],
@@ -511,6 +497,7 @@ class TrussApp(ctk.CTk):
                 return
 
             generate_pdf_report(results, info, pdf_path)
+            self._populate_results(results)
 
             self.status_label.configure(
                 text=f"✅  Concluído! PDF gerado em: {pdf_path}",
