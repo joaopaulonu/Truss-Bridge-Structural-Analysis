@@ -1,5 +1,4 @@
-# Análise de Treliça - 18 Nós (A a R)
-# Resolve o sistema subdeterminado via mínima norma (lstsq) para garantir consistência física.
+# Motor de Cálculo de Treliça: Modelo estático de 18 nós via equilíbrio nodal (SVD).
 
 import math
 import numpy as np
@@ -18,15 +17,13 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 import os
 import datetime
 
-# Constantes trigonométricas (ângulos de 60°) e tolerância para membros nulos
+# Geometria da treliça: Segmentos equilaterais (60°) e limites de precisão.
 C60 = math.cos(math.radians(60))
 S60 = math.sin(math.radians(60))
 TOLERANCIA_ZERO = 1e-6
 
 def get_force_names():
-    """Lista as 37 forças incógnitas (membros) da estrutura."""
-    # Nomenclatura F_XY: força entre os nós X e Y
-    # Convenção: (+) Tração, (-) Compressão
+    """Mapeamento dos 37 membros da estrutura. Convenção: (+) Tração, (-) Compressão."""
     return [
         "FAB", "FAD",                                   # Nó A
         "FBC", "FBD", "FBE",                            # Nó B (+ FAB, FAD já listados)
@@ -127,17 +124,16 @@ def get_node_equations_text():
 
 
 def build_system():
-    """Gera a matriz de coeficientes A e o vetor de cargas B (Ax = B)."""
+    """Constrói o sistema Ax = B baseado no equilíbrio estático (ΣFx=0, ΣFy=0) de cada nó."""
     names = get_force_names()
     idx   = {name: i for i, name in enumerate(names)}
-    n_eq  = 36   # 18 nós * 2 direções
+    n_eq  = 36   # 18 nós x 2 direções
     n_unk = len(names)
 
     A = np.zeros((n_eq, n_unk))
     B = np.zeros(n_eq)
     row = 0
 
-    # Popula uma linha da matriz e incrementa o contador
     def eq(coeffs: dict, b: float = 0.0):
         nonlocal row
         for name, coef in coeffs.items():
@@ -145,7 +141,6 @@ def build_system():
         B[row] = b
         row += 1
 
-    # Nó A - Apoio com carga vertical
     eq({"FAD": 1.0, "FAB": C60})
     eq({"FAB": S60}, b=-5.0)
 
@@ -183,7 +178,7 @@ def build_system():
     eq({"FFI": -1.0, "FHI": -C60, "FIK": C60, "FIL": 1.0})
     eq({"FHI": -S60, "FIK": -S60})
 
-    # Nó J - Carga central de 10kN
+    # Carga central concentrada
     eq({"FGJ": -1.0, "FHJ": -C60, "FJK": C60, "FJM": 1.0})
     eq({"FHJ": S60,  "FJK": S60}, b=10.0)
 
@@ -217,7 +212,6 @@ def build_system():
     eq({"FNQ": -1.0, "FOQ": -C60, "FPQ": -C60, "FQR": C60})
     eq({"FOQ": S60,  "FPQ": -S60, "FQR": -S60})
 
-    # Nó R - Apoio com carga vertical
     eq({"FPR": -1.0, "FQR": -C60})
     eq({"FQR": S60}, b=-5.0)
 
@@ -225,13 +219,12 @@ def build_system():
 
 
 def solve_truss():
-    """Resolve o sistema subdeterminado usando mínimos quadrados (SVD)."""
+    """Resolve o sistema via SVD (mínimos quadrados) para gerenciar a hiperestaticidade."""
     A, B, names = build_system()
 
-    # lstsq lida com a matriz de posto incompleto (redundância estática)
     x, residuals, rank, sv = np.linalg.lstsq(A, B, rcond=None)
 
-    # Verificação de resíduo (controle de qualidade numérica)
+    # Verificação de consistência física (resíduo numérico)
     max_res = float(np.max(np.abs(A @ x - B)))
     if max_res > 1e-8:
         raise ValueError(
@@ -249,13 +242,12 @@ def solve_truss():
 
 
 def classify_force(value: float, tol: float = TOLERANCIA_ZERO) -> str:
-    """Define se a força é Tração, Compressão ou Nula."""
     if abs(value) < tol:
         return "Nulo"
     return "Tração" if value > 0 else "Compressão"
 
 def generate_pdf_report(results: dict, info: dict, output_path: str):
-    """Gera o relatório técnico em PDF via ReportLab."""
+    """Gera documentação técnica formal em PDF."""
     doc = SimpleDocTemplate(
         output_path,
         pagesize=A4,
@@ -266,7 +258,7 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
         subject="Método dos Nós — 18 Nós",
     )
 
-    # Paleta de cores e estilos do documento
+    # Configuração de Identidade Visual e Estilos
     NAVY   = colors.HexColor("#1a2a4a")
     BLUE   = colors.HexColor("#2c5282")
     LIGHT  = colors.HexColor("#4a90d9")
@@ -302,7 +294,6 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
     story = []
     now   = datetime.datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
 
-    # Cabeçalho
     story += [
         Spacer(1, 0.2*cm),
         Paragraph("RELATÓRIO DE ANÁLISE ESTRUTURAL", s_title),
@@ -311,7 +302,6 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
         HRFlowable(width="100%", thickness=2, color=NAVY, spaceAfter=10),
     ]
 
-    # Introdução Técnica
     story.append(Paragraph("1. Descrição do Problema e Metodologia", s_sec))
     story.append(Paragraph(
         "A presente análise aplica o <b>Método dos Nós</b> (equilíbrio nodal) para "
@@ -330,7 +320,6 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
         s_body
     ))
 
-    # Metadados do sistema linear
     story.append(Paragraph(
         f"Sistema linear: {info['n_equations']} equações × {info['n_unknowns']} incógnitas "
         f"| Posto: {info['rank']} "
@@ -339,7 +328,6 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
     ))
     story.append(Spacer(1, 0.3*cm))
 
-    # Listagem de Equações
     story.append(Paragraph("2. Equações de Equilíbrio Nodal", s_sec))
     story.append(Paragraph(
         "Equações de equilíbrio estático (ΣFx = 0 e ΣFy = 0) para cada nó da treliça.",
@@ -357,7 +345,6 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
 
     story.append(Spacer(1, 0.4*cm))
 
-    # Tabela de Resultados (Forças)
     story.append(Paragraph("3. Resultados — Forças nos Membros", s_sec))
     story.append(Paragraph(
         "Valores obtidos pela resolução numérica do sistema linear. "
@@ -409,7 +396,6 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
     story.append(tbl)
     story.append(Spacer(1, 0.5*cm))
 
-    # Sumário de Esforços
     story.append(Paragraph("4. Resumo Estatístico", s_sec))
 
     vals       = list(results.values())
@@ -447,7 +433,6 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
     ]))
     story.append(stbl)
 
-    # Rodapé final
     story += [
         Spacer(1, 1.0*cm),
         HRFlowable(width="100%", thickness=1,
@@ -464,9 +449,7 @@ def generate_pdf_report(results: dict, info: dict, output_path: str):
 
 
 class TrussApp(ctk.CTk):
-    """Interface gráfica principal para cálculo e exibição."""
-
-    # Paleta de cores
+    # Configuração de Cores (Dark Theme)
     C_BG      = "#1a2a4a"
     C_PANEL   = "#1e3155"
     C_ACCENT  = "#4a90d9"
@@ -491,7 +474,6 @@ class TrussApp(ctk.CTk):
         self._build_layout()
 
     def _build_layout(self):
-        """Configura o grid principal da janela."""
         self.grid_columnconfigure(0, weight=2)
         self.grid_columnconfigure(1, weight=3)
         self.grid_rowconfigure(1, weight=1)
@@ -502,7 +484,6 @@ class TrussApp(ctk.CTk):
         self._build_footer()
 
     def _build_header(self):
-        """Cria o frame de título superior."""
         hdr = ctk.CTkFrame(self, fg_color=self.C_PANEL, corner_radius=0, height=70)
         hdr.grid(row=0, column=0, columnspan=2, sticky="ew")
         hdr.grid_propagate(False)
@@ -523,7 +504,6 @@ class TrussApp(ctk.CTk):
         ).grid(row=1, column=0, pady=(0, 10))
 
     def _build_left_panel(self):
-        """Painel lateral para exibir as equações montadas."""
         frame = ctk.CTkFrame(self, fg_color=self.C_PANEL, corner_radius=8)
         frame.grid(row=1, column=0, sticky="nsew", padx=(10, 5), pady=10)
         frame.grid_rowconfigure(1, weight=1)
@@ -548,7 +528,6 @@ class TrussApp(ctk.CTk):
         self._populate_equations()
 
     def _populate_equations(self):
-        """Preenche o widget de texto com as equações literais."""
         eq_texts = get_node_equations_text()
         self.eq_textbox.configure(state="normal")
         self.eq_textbox.delete("1.0", "end")
@@ -564,13 +543,12 @@ class TrussApp(ctk.CTk):
         self.eq_textbox.configure(state="disabled")
 
     def _build_right_panel(self):
-        """Painel para resultados e controles de execução."""
         frame = ctk.CTkFrame(self, fg_color=self.C_PANEL, corner_radius=8)
         frame.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=10)
         frame.grid_rowconfigure(1, weight=1)
         frame.grid_columnconfigure(0, weight=1)
 
-        # Botões e labels superiores
+        # Header do Painel de Resultados
         top = ctk.CTkFrame(frame, fg_color="transparent")
         top.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
         top.grid_columnconfigure(0, weight=1)
@@ -595,7 +573,7 @@ class TrussApp(ctk.CTk):
         )
         self.btn_calc.grid(row=0, column=1, padx=(10, 0))
 
-        # Tabela (Treeview) para as forças calculadas
+        # Configuração da Tabela de Dados (Estilo Clam para customização)
         tree_frame = ctk.CTkFrame(frame, fg_color="#0d1b2e", corner_radius=6)
         tree_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 4))
         tree_frame.grid_rowconfigure(0, weight=1)
@@ -627,7 +605,6 @@ class TrussApp(ctk.CTk):
         self.tree.column("Força (kN)",  width=160, anchor="center")
         self.tree.column("Estado",      width=130, anchor="center")
 
-        # Tags de cor por classificação
         self.tree.tag_configure("tracao",     foreground=self.C_TRAC)
         self.tree.tag_configure("compressao", foreground=self.C_COMP)
         self.tree.tag_configure("nulo",       foreground=self.C_ZERO)
@@ -638,7 +615,6 @@ class TrussApp(ctk.CTk):
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
 
-        # Barra de feedback inferior
         self.status_label = ctk.CTkLabel(
             frame,
             text="Clique em '▶ Calcular e Gerar PDF' para iniciar a análise.",
@@ -649,7 +625,6 @@ class TrussApp(ctk.CTk):
                                padx=10, pady=(2, 6), sticky="w")
 
     def _build_footer(self):
-        """Barra de rodapé com informações técnicas."""
         ftr = ctk.CTkFrame(self, fg_color=self.C_PANEL,
                            corner_radius=0, height=26)
         ftr.grid(row=2, column=0, columnspan=2, sticky="ew")
@@ -662,7 +637,7 @@ class TrussApp(ctk.CTk):
         ).pack(side="left", padx=12, pady=4)
 
     def _on_calculate(self):
-        """Trigger principal: calcula o sistema, atualiza a UI e salva o PDF."""
+        """Orquestra o cálculo, atualização da interface e exportação PDF."""
         self.btn_calc.configure(state="disabled", text="⏳  Calculando...")
         self.status_label.configure(
             text="Resolvendo o sistema de equações...",
@@ -671,13 +646,10 @@ class TrussApp(ctk.CTk):
         self.update()
 
         try:
-            # 1. Resolver sistema
             results, info = solve_truss()
-
-            # 2. Exibir na Treeview
             self._populate_results(results)
 
-            # 3. Gerar PDF na área de trabalho do usuário
+            # Seleção de destino para o relatório
             pdf_path = ctk.filedialog.asksaveasfilename(
                 defaultextension=".pdf",
                 filetypes=[("Arquivos PDF", "*.pdf")],
@@ -718,7 +690,6 @@ class TrussApp(ctk.CTk):
                 state="normal", text="▶  Calcular e Gerar PDF")
 
     def _populate_results(self, results: dict):
-        """Atualiza a tabela visual com os novos dados."""
         for item in self.tree.get_children():
             self.tree.delete(item)
 
@@ -733,7 +704,6 @@ class TrussApp(ctk.CTk):
 
 
 def run_cli(output_pdf: str = "relatorio_trelica.pdf"):
-    """Execução via terminal, ignorando a interface gráfica."""
     print("  ANÁLISE ESTRUTURAL DE TRELIÇA — Método dos Nós")
     print("  18 Nós (A a R) | Resolução NumPy")
     print("=" * 60)
@@ -756,7 +726,7 @@ def run_cli(output_pdf: str = "relatorio_trelica.pdf"):
 if __name__ == "__main__":
     import sys
     
-    # Suporte a flag --cli para rodar sem interface
+    # Interface de Linha de Comando opcional
     if "--cli" in sys.argv:
         out = sys.argv[sys.argv.index("--cli") + 1] \
               if len(sys.argv) > sys.argv.index("--cli") + 1 \
